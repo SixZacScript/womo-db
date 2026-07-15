@@ -54,19 +54,97 @@ impl MongoDBClient {
 
     pub async fn get_collection_stats(&self, db_name: &str, collection_name: &str) -> Result<CollectionStats, mongodb::error::Error> {
         let db = self.get_database(db_name);
-        let result = db.run_command(doc! { "collStats": collection_name }).await?;
+        let result = db.run_command(doc! { "collStats": collection_name, "scale": 1 }).await?;
+
+        // MongoDB may return i32 or i64 depending on value size and storage engine
+        let get_number = |doc: &mongodb::bson::Document, key: &str| -> i64 {
+            doc.get_i64(key)
+                .or_else(|_| doc.get_i32(key).map(|v| v as i64))
+                .or_else(|_| doc.get_f64(key).map(|v| v as i64))
+                .unwrap_or(0)
+        };
 
         let stats = CollectionStats {
             name: collection_name.to_string(),
-            size: result.get_i64("size").unwrap_or(0),
-            count: result.get_i64("count").unwrap_or(0),
-            avg_obj_size: result.get_i64("avgObjSize").unwrap_or(0),
-            storage_size: result.get_i64("storageSize").unwrap_or(0),
-            total_index_size: result.get_i64("totalIndexSize").unwrap_or(0),
+            size: get_number(&result, "size"),
+            count: get_number(&result, "count"),
+            avg_obj_size: get_number(&result, "avgObjSize"),
+            storage_size: get_number(&result, "storageSize"),
+            total_index_size: get_number(&result, "totalIndexSize"),
             nindexes: result.get_i32("nindexes").unwrap_or(0),
         };
 
         Ok(stats)
+    }
+
+    pub async fn get_documents(&self, db_name: &str, collection_name: &str, limit: i64) -> Result<Vec<mongodb::bson::Document>, mongodb::error::Error> {
+        use mongodb::bson::Document;
+        use futures::stream::StreamExt;
+
+        let db = self.get_database(db_name);
+        let collection = db.collection::<Document>(collection_name);
+
+        let mut cursor = collection.find(doc! {}).limit(limit).await?;
+        let mut documents = Vec::new();
+
+        while let Some(doc) = cursor.next().await {
+            documents.push(doc?);
+        }
+
+        Ok(documents)
+    }
+
+    pub async fn query_documents(&self, db_name: &str, collection_name: &str, query_str: &str, limit: i64) -> Result<Vec<mongodb::bson::Document>, mongodb::error::Error> {
+        use mongodb::bson::Document;
+        use futures::stream::StreamExt;
+
+        let db = self.get_database(db_name);
+        let collection = db.collection::<Document>(collection_name);
+
+        let query: Document = serde_json::from_str(query_str).map_err(|e| {
+            mongodb::error::Error::custom(format!("Invalid query JSON: {}", e))
+        })?;
+
+        let mut cursor = collection.find(query).limit(limit).await?;
+        let mut documents = Vec::new();
+
+        while let Some(doc) = cursor.next().await {
+            documents.push(doc?);
+        }
+
+        Ok(documents)
+    }
+
+    pub async fn update_document(&self, db_name: &str, collection_name: &str, doc_id: &str, new_doc_str: &str) -> Result<bool, mongodb::error::Error> {
+        use mongodb::bson::{Document, oid::ObjectId};
+
+        let db = self.get_database(db_name);
+        let collection = db.collection::<Document>(collection_name);
+
+        let oid = ObjectId::parse_str(doc_id).map_err(|e| {
+            mongodb::error::Error::custom(format!("Invalid ObjectId: {}", e))
+        })?;
+
+        let new_doc: Document = serde_json::from_str(new_doc_str).map_err(|e| {
+            mongodb::error::Error::custom(format!("Invalid document JSON: {}", e))
+        })?;
+
+        let result = collection.replace_one(doc! { "_id": oid }, new_doc).await?;
+        Ok(result.modified_count > 0)
+    }
+
+    pub async fn delete_document(&self, db_name: &str, collection_name: &str, doc_id: &str) -> Result<bool, mongodb::error::Error> {
+        use mongodb::bson::{Document, oid::ObjectId};
+
+        let db = self.get_database(db_name);
+        let collection = db.collection::<Document>(collection_name);
+
+        let oid = ObjectId::parse_str(doc_id).map_err(|e| {
+            mongodb::error::Error::custom(format!("Invalid ObjectId: {}", e))
+        })?;
+
+        let result = collection.delete_one(doc! { "_id": oid }).await?;
+        Ok(result.deleted_count > 0)
     }
 
     pub async fn ping(&self) -> Result<bool, mongodb::error::Error> {

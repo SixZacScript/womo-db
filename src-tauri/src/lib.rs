@@ -53,6 +53,53 @@ async fn get_collection_stats(db_name: String, collection_name: String, state: S
     client.get_collection_stats(&db_name, &collection_name).await.map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+async fn get_documents(db_name: String, collection_name: String, limit: i64, state: State<'_, AppState>) -> Result<Vec<serde_json::Value>, String> {
+    let client_guard = state.mongo_client.lock().await;
+    let client = client_guard.as_ref().ok_or("Not connected")?;
+
+    let docs = client.get_documents(&db_name, &collection_name, limit).await.map_err(|e| e.to_string())?;
+
+    // Convert BSON Documents to JSON Values
+    let json_docs: Vec<serde_json::Value> = docs.iter()
+        .filter_map(|doc| bson::to_bson(doc).ok())
+        .filter_map(|bson_val| serde_json::to_value(&bson_val).ok())
+        .collect();
+
+    Ok(json_docs)
+}
+
+#[tauri::command]
+async fn query_documents(db_name: String, collection_name: String, query: String, limit: i64, state: State<'_, AppState>) -> Result<Vec<serde_json::Value>, String> {
+    let client_guard = state.mongo_client.lock().await;
+    let client = client_guard.as_ref().ok_or("Not connected")?;
+
+    let docs = client.query_documents(&db_name, &collection_name, &query, limit).await.map_err(|e| e.to_string())?;
+
+    let json_docs: Vec<serde_json::Value> = docs.iter()
+        .filter_map(|doc| bson::to_bson(doc).ok())
+        .filter_map(|bson_val| serde_json::to_value(&bson_val).ok())
+        .collect();
+
+    Ok(json_docs)
+}
+
+#[tauri::command]
+async fn update_document(db_name: String, collection_name: String, doc_id: String, new_doc: String, state: State<'_, AppState>) -> Result<bool, String> {
+    let client_guard = state.mongo_client.lock().await;
+    let client = client_guard.as_ref().ok_or("Not connected")?;
+
+    client.update_document(&db_name, &collection_name, &doc_id, &new_doc).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn delete_document(db_name: String, collection_name: String, doc_id: String, state: State<'_, AppState>) -> Result<bool, String> {
+    let client_guard = state.mongo_client.lock().await;
+    let client = client_guard.as_ref().ok_or("Not connected")?;
+
+    client.delete_document(&db_name, &collection_name, &doc_id).await.map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -64,7 +111,11 @@ pub fn run() {
             connect_mongodb,
             list_databases,
             list_collections,
-            get_collection_stats
+            get_collection_stats,
+            get_documents,
+            query_documents,
+            update_document,
+            delete_document
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
