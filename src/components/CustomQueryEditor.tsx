@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo, useCallback } from "react";
+import { useState, useRef, useMemo, useCallback, useEffect } from "react";
 
 interface CustomQueryEditorProps {
   value: string;
@@ -33,6 +33,21 @@ export function CustomQueryEditor({ value, onChange, onExecute, fieldNames = [] 
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Hide suggestions when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setSuggestions([]);
+      }
+    }
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
 
   const buildSuggestions = useCallback((filter: string) => {
     const allSuggestions: Suggestion[] = [];
@@ -243,7 +258,7 @@ export function CustomQueryEditor({ value, onChange, onExecute, fieldNames = [] 
 
   return (
     <div className="flex gap-2 items-start">
-      <div className="flex-1 relative border border-gray-700 rounded bg-gray-800">
+      <div ref={containerRef} className="flex-1 relative border border-gray-700 rounded bg-gray-800">
         <div className="absolute inset-0 p-3 font-mono text-sm pointer-events-none whitespace-pre-wrap break-words overflow-hidden leading-relaxed">
           {highlightedContent}
         </div>
@@ -253,7 +268,7 @@ export function CustomQueryEditor({ value, onChange, onExecute, fieldNames = [] 
           onInput={handleInput}
           onKeyDown={handleKeyDown}
           placeholder="{}"
-          className="relative w-full min-h-[80px] p-3 font-mono text-sm bg-transparent text-transparent caret-white outline-none resize-none leading-relaxed"
+          className="relative w-full min-h-[80px] p-3 font-mono text-sm bg-transparent text-transparent caret-white outline-none resize-y leading-relaxed"
           style={{ caretColor: "#fff" }}
           spellCheck={false}
         />

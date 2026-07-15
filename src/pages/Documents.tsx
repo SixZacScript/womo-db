@@ -3,6 +3,7 @@ import { mongoService } from "../services/mongodb";
 import { DocumentViewer } from "../components/DocumentViewer";
 import { CustomQueryEditor } from "../components/CustomQueryEditor";
 import { useTabContext } from "../contexts/TabContext";
+import { AIQueryButton } from "../components/AIQueryButton";
 
 interface DocumentsProps {
   selectedDb: string;
@@ -20,7 +21,7 @@ export function Documents({ selectedDb, selectedCollection, tabId }: DocumentsPr
   const [error, setError] = useState("");
   const [toast, setToast] = useState<string | null>(null);
 
-  // Load initial state from tab
+  // Load initial state from tab (only on mount or when tabId changes)
   useEffect(() => {
     const tab = tabs.find(t => t.id === tabId);
     if (tab?.state) {
@@ -28,7 +29,7 @@ export function Documents({ selectedDb, selectedCollection, tabId }: DocumentsPr
       if (tab.state.page) setCurrentPage(tab.state.page);
       if (tab.state.pageSize) setPageSize(tab.state.pageSize);
     }
-  }, [tabId, tabs]);
+  }, [tabId]); // Remove 'tabs' from dependency
 
   useEffect(() => {
     if (selectedCollection) {
@@ -180,7 +181,16 @@ export function Documents({ selectedDb, selectedCollection, tabId }: DocumentsPr
       </div>
 
       <div className="mb-4">
-        <h4 className="text-md font-semibold mb-3">Query {selectedCollection}</h4>
+        <div className="flex items-center justify-between mb-3">
+          <h4 className="text-md font-semibold">Query {selectedCollection}</h4>
+          <AIQueryButton
+            collectionName={selectedCollection}
+            sampleFields={documents.length > 0 ? extractFieldNames(documents) : []}
+            onQueryGenerated={(generatedQuery) => {
+              setQuery(generatedQuery);
+            }}
+          />
+        </div>
         <CustomQueryEditor
           value={query}
           onChange={setQuery}

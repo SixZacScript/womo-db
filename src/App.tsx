@@ -6,6 +6,7 @@ import { TabProvider, useTabContext } from "./contexts/TabContext";
 import { CollectionCacheProvider } from "./contexts/CollectionCacheContext";
 import { TabBar } from "./components/TabBar";
 import { TabContent } from "./components/TabContent";
+import { SettingsButton } from "./components/SettingsButton";
 import "./App.css";
 
 function AppContent() {
@@ -196,6 +197,7 @@ function App() {
     <TabProvider>
       <CollectionCacheProvider>
         <AppContent />
+        <SettingsButton />
       </CollectionCacheProvider>
     </TabProvider>
   );
