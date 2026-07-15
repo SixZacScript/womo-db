@@ -1,0 +1,8 @@
+{
+  "name": "womo-db",
+  "displayName": "WOMO DB",
+  "version": "0.1.0",
+  "description": "Desktop MongoDB Manager",
+  "author": "Your Name",
+  "license": "MIT"
+}
