@@ -1,4 +1,4 @@
-import { useTabContext, Tab } from "../contexts/TabContext";
+import { useTabContext } from "../contexts/TabContext";
 import { Collections } from "../pages/Collections";
 import { Documents } from "../pages/Documents";
 
@@ -8,7 +8,7 @@ interface TabContentProps {
   onToggleFavoriteCollection: (colName: string) => void;
 }
 
-export function TabContent({ selectedDb, favoriteCollections, onToggleFavoriteCollection }: TabContentProps) {
+export function TabContent({ favoriteCollections, onToggleFavoriteCollection }: TabContentProps) {
   const { tabs, activeTabId } = useTabContext();
 
   const activeTab = tabs.find(t => t.id === activeTabId);

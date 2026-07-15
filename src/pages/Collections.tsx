@@ -23,7 +23,7 @@ interface CollectionsProps {
 export function Collections({ selectedDb, favoriteCollections, onToggleFavoriteCollection }: CollectionsProps) {
   const [collections, setCollections] = useState<string[]>([]);
   const [collectionStats, setCollectionStats] = useState<Map<string, CollectionStats>>(new Map());
-  const [error, setError] = useState("");
+  const [_, setError] = useState("");
   const [collectionSearchTerm, setCollectionSearchTerm] = useState("");
   const { addTab } = useTabContext();
   const { getStats, setStats } = useCollectionCache();
