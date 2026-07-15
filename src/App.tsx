@@ -9,7 +9,7 @@ import { TabContent } from "./components/TabContent";
 import "./App.css";
 
 function AppContent() {
-  const { addTab, clearTabs } = useTabContext();
+  const { addTab } = useTabContext();
   const [uri, setUri] = useState("");
   const [connected, setConnected] = useState(false);
   const [databases, setDatabases] = useState<string[]>([]);
