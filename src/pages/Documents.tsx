@@ -2,14 +2,16 @@ import { useState, useEffect } from "react";
 import { mongoService } from "../services/mongodb";
 import { DocumentViewer } from "../components/DocumentViewer";
 import { CustomQueryEditor } from "../components/CustomQueryEditor";
+import { useTabContext } from "../contexts/TabContext";
 
 interface DocumentsProps {
   selectedDb: string;
   selectedCollection: string;
-  onBack: () => void;
+  tabId: string;
 }
 
-export function Documents({ selectedDb, selectedCollection, onBack }: DocumentsProps) {
+export function Documents({ selectedDb, selectedCollection, tabId }: DocumentsProps) {
+  const { tabs, updateTabState } = useTabContext();
   const [documents, setDocuments] = useState<any[]>([]);
   const [query, setQuery] = useState("{}");
   const [currentPage, setCurrentPage] = useState(1);
@@ -17,6 +19,16 @@ export function Documents({ selectedDb, selectedCollection, onBack }: DocumentsP
   const [totalCount, setTotalCount] = useState(0);
   const [error, setError] = useState("");
   const [toast, setToast] = useState<string | null>(null);
+
+  // Load initial state from tab
+  useEffect(() => {
+    const tab = tabs.find(t => t.id === tabId);
+    if (tab?.state) {
+      if (tab.state.query) setQuery(tab.state.query);
+      if (tab.state.page) setCurrentPage(tab.state.page);
+      if (tab.state.pageSize) setPageSize(tab.state.pageSize);
+    }
+  }, [tabId, tabs]);
 
   useEffect(() => {
     if (selectedCollection) {
@@ -108,6 +120,15 @@ export function Documents({ selectedDb, selectedCollection, onBack }: DocumentsP
     setTimeout(() => setToast(null), 2000);
   }
 
+  // Sync state to tab context
+  useEffect(() => {
+    updateTabState(tabId, {
+      query,
+      page: currentPage,
+      pageSize,
+    });
+  }, [query, currentPage, pageSize, tabId, updateTabState]);
+
   // Re-fetch documents when page or pageSize changes (but not query)
   useEffect(() => {
     if (!selectedCollection) return;
@@ -155,12 +176,6 @@ export function Documents({ selectedDb, selectedCollection, onBack }: DocumentsP
   return (
     <div className="flex-1 overflow-y-auto pl-5 flex flex-col">
       <div className="flex items-center gap-3 mb-3">
-        <button
-          onClick={onBack}
-          className="px-3 py-1.5 rounded bg-gray-800 border border-gray-700 text-sm hover:border-blue-500"
-        >
-          ← Back to collections
-        </button>
         <h3 className="text-lg font-semibold">Query {selectedCollection}</h3>
       </div>
 

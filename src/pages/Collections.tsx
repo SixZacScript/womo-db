@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { Star } from "lucide-react";
 import { mongoService } from "../services/mongodb";
-import { Documents } from "./Documents";
+import { useTabContext } from "../contexts/TabContext";
+import { useCollectionCache } from "../contexts/CollectionCacheContext";
 
 interface CollectionStats {
   name: string;
@@ -24,7 +25,8 @@ export function Collections({ selectedDb, favoriteCollections, onToggleFavoriteC
   const [collectionStats, setCollectionStats] = useState<Map<string, CollectionStats>>(new Map());
   const [error, setError] = useState("");
   const [collectionSearchTerm, setCollectionSearchTerm] = useState("");
-  const [selectedCollection, setSelectedCollection] = useState("");
+  const { addTab } = useTabContext();
+  const { getStats, setStats } = useCollectionCache();
 
   useEffect(() => {
     if (selectedDb) {
@@ -35,7 +37,6 @@ export function Collections({ selectedDb, favoriteCollections, onToggleFavoriteC
   async function loadCollections() {
     try {
       setError("");
-      setSelectedCollection("");
       setCollections([]);
       setCollectionStats(new Map());
       const cols = await mongoService.listCollections(selectedDb);
@@ -52,30 +53,57 @@ export function Collections({ selectedDb, favoriteCollections, onToggleFavoriteC
       });
 
       setCollections(sorted);
-      setCollectionStats(new Map());
+
+      // Load cached stats immediately
+      const cachedStats = new Map<string, CollectionStats>();
+      sorted.forEach(col => {
+        const cached = getStats(selectedDb, col);
+        if (cached) {
+          cachedStats.set(col, cached);
+        }
+      });
+      setCollectionStats(cachedStats);
 
       // Fetch favorites first
       const favorites = sorted.filter(col => favoriteCollections.has(`${selectedDb}:${col}`));
       const nonFavorites = sorted.filter(col => !favoriteCollections.has(`${selectedDb}:${col}`));
 
-      // Fetch favorite stats sequentially to render immediately
-      for (const col of favorites) {
-        try {
-          const stats = await mongoService.getCollectionStats(selectedDb, col);
-          setCollectionStats(prev => new Map(prev).set(col, stats));
-        } catch (e) {
-          console.error(`Failed to get stats for ${col}:`, e);
-        }
+      // Fetch favorite stats in parallel
+      const favoritesWithoutCache = favorites.filter(col => !cachedStats.has(col));
+      if (favoritesWithoutCache.length > 0) {
+        const favoriteResults = await Promise.all(
+          favoritesWithoutCache.map(async (col) => {
+            try {
+              const stats = await mongoService.getCollectionStats(selectedDb, col);
+              setStats(selectedDb, col, stats);
+              return [col, stats] as const;
+            } catch (e) {
+              console.error(`Failed to get stats for ${col}:`, e);
+              return null;
+            }
+          })
+        );
+
+        setCollectionStats(prev => {
+          const next = new Map(prev);
+          favoriteResults.forEach(entry => {
+            if (entry) next.set(entry[0], entry[1]);
+          });
+          return next;
+        });
       }
 
-      // Fetch non-favorites in batches
-      const BATCH_SIZE = 5;
-      for (let i = 0; i < nonFavorites.length; i += BATCH_SIZE) {
-        const batch = nonFavorites.slice(i, i + BATCH_SIZE);
+      // Fetch non-favorites in batches (only those without cache)
+      const BATCH_SIZE = 10;
+      const nonFavoritesWithoutCache = nonFavorites.filter(col => !cachedStats.has(col));
+
+      for (let i = 0; i < nonFavoritesWithoutCache.length; i += BATCH_SIZE) {
+        const batch = nonFavoritesWithoutCache.slice(i, i + BATCH_SIZE);
         const batchStats = await Promise.all(
           batch.map(async (col) => {
             try {
               const stats = await mongoService.getCollectionStats(selectedDb, col);
+              setStats(selectedDb, col, stats);
               return [col, stats] as const;
             } catch (e) {
               console.error(`Failed to get stats for ${col}:`, e);
@@ -113,7 +141,17 @@ export function Collections({ selectedDb, favoriteCollections, onToggleFavoriteC
   }
 
   async function handleSelectCollection(collectionName: string) {
-    setSelectedCollection(collectionName);
+    addTab({
+      type: 'documents',
+      db: selectedDb,
+      collection: collectionName,
+      label: `${selectedDb}.${collectionName}`,
+      state: {
+        query: '{}',
+        page: 1,
+        pageSize: 20,
+      },
+    });
   }
 
   function formatBytes(bytes: number): string {
@@ -125,16 +163,6 @@ export function Collections({ selectedDb, favoriteCollections, onToggleFavoriteC
   }
 
   if (!selectedDb) return null;
-
-  if (selectedCollection) {
-    return (
-      <Documents
-        selectedDb={selectedDb}
-        selectedCollection={selectedCollection}
-        onBack={() => setSelectedCollection("")}
-      />
-    );
-  }
 
   return (
     <div className="flex-1 pl-5 flex flex-col overflow-hidden">

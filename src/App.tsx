@@ -2,10 +2,14 @@ import { useState, useEffect } from "react";
 import { Star } from "lucide-react";
 import { mongoService } from "./services/mongodb";
 import { secureStorage } from "./services/storage";
-import { Collections } from "./pages/Collections";
+import { TabProvider, useTabContext } from "./contexts/TabContext";
+import { CollectionCacheProvider } from "./contexts/CollectionCacheContext";
+import { TabBar } from "./components/TabBar";
+import { TabContent } from "./components/TabContent";
 import "./App.css";
 
-function App() {
+function AppContent() {
+  const { addTab, clearTabs } = useTabContext();
   const [uri, setUri] = useState("");
   const [connected, setConnected] = useState(false);
   const [databases, setDatabases] = useState<string[]>([]);
@@ -104,6 +108,13 @@ function App() {
 
   async function handleSelectDb(dbName: string) {
     setSelectedDb(dbName);
+
+    // Create or switch to Collections tab for this database
+    addTab({
+      type: 'collection',
+      db: dbName,
+      label: `Collections - ${dbName}`,
+    });
   }
 
   return (
@@ -165,15 +176,28 @@ function App() {
             </ul>
           </div>
 
-          <Collections
-            selectedDb={selectedDb}
-            favoriteCollections={favoriteCollections}
-            onToggleFavoriteCollection={toggleFavoriteCollection}
-          />
+          <div className="flex-1 flex flex-col overflow-hidden">
+            <TabBar />
+            <TabContent
+              selectedDb={selectedDb}
+              favoriteCollections={favoriteCollections}
+              onToggleFavoriteCollection={toggleFavoriteCollection}
+            />
+          </div>
         </div>
       )}
 
     </main>
+  );
+}
+
+function App() {
+  return (
+    <TabProvider>
+      <CollectionCacheProvider>
+        <AppContent />
+      </CollectionCacheProvider>
+    </TabProvider>
   );
 }
 
