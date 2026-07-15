@@ -31,8 +31,8 @@ export const mongoService = {
     return await invoke("get_documents", { dbName, collectionName, limit });
   },
 
-  async queryDocuments(dbName: string, collectionName: string, query: string, limit: number = 100): Promise<any[]> {
-    return await invoke("query_documents", { dbName, collectionName, query, limit });
+  async queryDocuments(dbName: string, collectionName: string, query: string, limit: number = 100, skip: number = 0): Promise<any[]> {
+    return await invoke("query_documents", { dbName, collectionName, query, limit, skip });
   },
 
   async updateDocument(dbName: string, collectionName: string, docId: string, newDoc: string): Promise<boolean> {

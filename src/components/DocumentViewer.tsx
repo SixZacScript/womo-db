@@ -9,9 +9,10 @@ interface DocumentViewerProps {
   documents: Document[];
   onUpdate: (docId: string, newContent: string) => Promise<void>;
   onDelete: (docId: string) => Promise<void>;
+  onCopy: (message: string) => void;
 }
 
-export function DocumentViewer({ documents, onUpdate, onDelete }: DocumentViewerProps) {
+export function DocumentViewer({ documents, onUpdate, onDelete, onCopy }: DocumentViewerProps) {
   const [editingPath, setEditingPath] = useState<string | null>(null);
   const [editValue, setEditValue] = useState<string>("");
   const [localDocuments, setLocalDocuments] = useState<Document[]>(documents);
@@ -41,9 +42,16 @@ export function DocumentViewer({ documents, onUpdate, onDelete }: DocumentViewer
     setEditValue(JSON.stringify(value));
   }
 
-  async function saveEdit(doc: Document, path: string) {
+  async function saveEdit(doc: Document, path: string, originalValue: any) {
     try {
       const newValue = JSON.parse(editValue);
+
+      // Check if value actually changed
+      if (JSON.stringify(newValue) === JSON.stringify(originalValue)) {
+        setEditingPath(null);
+        return;
+      }
+
       const updatedDoc = { ...doc };
 
       // Update nested path
@@ -136,7 +144,31 @@ export function DocumentViewer({ documents, onUpdate, onDelete }: DocumentViewer
     }
   }
 
-  function renderValue(value: any, docId: string, path: string = "", depth: number = 0): JSX.Element {
+  function copyToClipboard(value: any) {
+    let textToCopy: string;
+
+    // Extract actual value from BSON types
+    if (value && typeof value === 'object') {
+      if (value.$oid) {
+        textToCopy = value.$oid;
+      } else if (value.$date) {
+        const dateVal = value.$date.$numberLong ? parseInt(value.$date.$numberLong) : value.$date;
+        textToCopy = new Date(dateVal).toISOString();
+      } else {
+        textToCopy = JSON.stringify(value, null, 2);
+      }
+    } else {
+      textToCopy = String(value);
+    }
+
+    navigator.clipboard.writeText(textToCopy).then(() => {
+      onCopy('Copied to clipboard');
+    }).catch(err => {
+      console.error('Failed to copy:', err);
+    });
+  }
+
+  function renderValue(value: any, docId: string, path: string = "", depth: number = 0): React.ReactElement {
     const editKey = `${docId}:${path}`;
     const isEditing = editingPath === editKey;
 
@@ -147,13 +179,28 @@ export function DocumentViewer({ documents, onUpdate, onDelete }: DocumentViewer
           onChange={(e) => setEditValue(e.target.value)}
           onBlur={() => {
             const doc = localDocuments.find(d => (d._id?.$oid || d._id) === docId);
-            if (doc) saveEdit(doc, path);
+            if (doc) {
+              // Get original value for comparison
+              const keys = path.split('.');
+              let original: any = doc;
+              for (const key of keys) {
+                original = original[key];
+              }
+              saveEdit(doc, path, original);
+            }
           }}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();
               const doc = localDocuments.find(d => (d._id?.$oid || d._id) === docId);
-              if (doc) saveEdit(doc, path);
+              if (doc) {
+                const keys = path.split('.');
+                let original: any = doc;
+                for (const key of keys) {
+                  original = original[key];
+                }
+                saveEdit(doc, path, original);
+              }
             } else if (e.key === 'Escape') {
               setEditingPath(null);
             }
@@ -178,6 +225,7 @@ export function DocumentViewer({ documents, onUpdate, onDelete }: DocumentViewer
       return (
         <span
           className="text-purple-400 cursor-pointer hover:bg-gray-700 px-1 rounded"
+          onClick={() => copyToClipboard(value)}
           onDoubleClick={() => startEdit(docId, path, value)}
         >
           null
@@ -188,6 +236,7 @@ export function DocumentViewer({ documents, onUpdate, onDelete }: DocumentViewer
       return (
         <span
           className="text-gray-500 cursor-pointer hover:bg-gray-700 px-1 rounded"
+          onClick={() => copyToClipboard(value)}
           onDoubleClick={() => startEdit(docId, path, value)}
         >
           undefined
@@ -201,6 +250,7 @@ export function DocumentViewer({ documents, onUpdate, onDelete }: DocumentViewer
       return (
         <span
           className="text-green-400 cursor-pointer hover:bg-gray-700 px-1 rounded"
+          onClick={() => copyToClipboard(value)}
           onDoubleClick={() => startEdit(docId, path, value)}
         >
           "{value}"
@@ -211,6 +261,7 @@ export function DocumentViewer({ documents, onUpdate, onDelete }: DocumentViewer
       return (
         <span
           className="text-blue-400 cursor-pointer hover:bg-gray-700 px-1 rounded"
+          onClick={() => copyToClipboard(value)}
           onDoubleClick={() => startEdit(docId, path, value)}
         >
           {value}
@@ -221,6 +272,7 @@ export function DocumentViewer({ documents, onUpdate, onDelete }: DocumentViewer
       return (
         <span
           className="text-purple-400 cursor-pointer hover:bg-gray-700 px-1 rounded"
+          onClick={() => copyToClipboard(value)}
           onDoubleClick={() => startEdit(docId, path, value)}
         >
           {String(value)}
@@ -232,6 +284,7 @@ export function DocumentViewer({ documents, onUpdate, onDelete }: DocumentViewer
         return (
           <span
             className="text-gray-400 cursor-pointer hover:bg-gray-700 px-1 rounded"
+            onClick={() => copyToClipboard(value)}
             onDoubleClick={() => startEdit(docId, path, value)}
           >
             []
@@ -257,6 +310,7 @@ export function DocumentViewer({ documents, onUpdate, onDelete }: DocumentViewer
         return (
           <span
             className="text-yellow-400 cursor-pointer hover:bg-gray-700 px-1 rounded"
+            onClick={() => copyToClipboard(value)}
             onDoubleClick={() => startEdit(docId, path, value)}
           >
             ObjectId("{value.$oid}")
@@ -270,6 +324,7 @@ export function DocumentViewer({ documents, onUpdate, onDelete }: DocumentViewer
             return (
               <span
                 className="text-cyan-400 cursor-pointer hover:bg-gray-700 px-1 rounded"
+                onClick={() => copyToClipboard(value)}
                 onDoubleClick={() => startEdit(docId, path, value)}
               >
                 ISODate("{date.toISOString()}")
@@ -286,6 +341,7 @@ export function DocumentViewer({ documents, onUpdate, onDelete }: DocumentViewer
         return (
           <span
             className="text-gray-400 cursor-pointer hover:bg-gray-700 px-1 rounded"
+            onClick={() => copyToClipboard(value)}
             onDoubleClick={() => startEdit(docId, path, value)}
           >
             {"{}"}
@@ -333,6 +389,7 @@ export function DocumentViewer({ documents, onUpdate, onDelete }: DocumentViewer
     return (
       <span
         className="text-gray-400 cursor-pointer hover:bg-gray-700 px-1 rounded"
+        onClick={() => copyToClipboard(value)}
         onDoubleClick={() => startEdit(docId, path, value)}
       >
         {String(value)}
@@ -346,12 +403,12 @@ export function DocumentViewer({ documents, onUpdate, onDelete }: DocumentViewer
 
   return (
     <div className="border border-gray-700 rounded overflow-hidden">
-      <table className="w-full">
+      <table className="w-full table-fixed">
         <thead className="bg-gray-800 border-b border-gray-700">
           <tr>
             <th className="text-left py-2 px-3 font-semibold text-sm w-16">#</th>
             <th className="text-left py-2 px-3 font-semibold text-sm">Document</th>
-            <th className="text-right py-2 px-3 font-semibold text-sm w-24">Actions</th>
+            <th className="text-right py-2 px-3 font-semibold text-sm w-32">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -360,17 +417,31 @@ export function DocumentViewer({ documents, onUpdate, onDelete }: DocumentViewer
 
             return (
               <tr key={docId || idx} className="border-b border-gray-800 hover:bg-gray-800/50">
-                <td className="py-3 px-3 text-gray-500 text-sm align-top">{idx + 1}</td>
+                <td className="py-3 px-3 text-gray-500 text-sm align-top whitespace-nowrap">{idx + 1}</td>
                 <td className="py-3 px-3 font-mono text-sm">
-                  <div className="leading-relaxed">{renderValue(doc, docId, "", 0)}</div>
+                  <div className="leading-relaxed overflow-x-auto max-w-full">{renderValue(doc, docId, "", 0)}</div>
                 </td>
                 <td className="py-3 px-3 align-top">
                   <div className="flex gap-2 justify-end">
                     <button
-                      onClick={() => onDelete(docId)}
-                      className="px-3 py-1 text-xs rounded bg-red-600/20 hover:bg-red-600/30 border border-red-600/50 text-red-400"
+                      onClick={() => copyToClipboard(doc)}
+                      className="px-2 py-1 text-xs rounded bg-blue-600/20 hover:bg-blue-600/30 border border-blue-600/50 text-blue-400"
+                      title="Copy entire document"
                     >
-                      Delete
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => onDelete(docId)}
+                      className="px-2 py-1 text-xs rounded bg-red-600/20 hover:bg-red-600/30 border border-red-600/50 text-red-400"
+                      title="Delete document"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="3 6 5 6 21 6"></polyline>
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                      </svg>
                     </button>
                   </div>
                 </td>

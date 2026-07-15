@@ -70,11 +70,11 @@ async fn get_documents(db_name: String, collection_name: String, limit: i64, sta
 }
 
 #[tauri::command]
-async fn query_documents(db_name: String, collection_name: String, query: String, limit: i64, state: State<'_, AppState>) -> Result<Vec<serde_json::Value>, String> {
+async fn query_documents(db_name: String, collection_name: String, query: String, limit: i64, skip: u64, state: State<'_, AppState>) -> Result<Vec<serde_json::Value>, String> {
     let client_guard = state.mongo_client.lock().await;
     let client = client_guard.as_ref().ok_or("Not connected")?;
 
-    let docs = client.query_documents(&db_name, &collection_name, &query, limit).await.map_err(|e| e.to_string())?;
+    let docs = client.query_documents(&db_name, &collection_name, &query, limit, skip).await.map_err(|e| e.to_string())?;
 
     let json_docs: Vec<serde_json::Value> = docs.iter()
         .filter_map(|doc| bson::to_bson(doc).ok())

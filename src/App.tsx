@@ -3,7 +3,7 @@ import { Star } from "lucide-react";
 import { mongoService } from "./services/mongodb";
 import { secureStorage } from "./services/storage";
 import { DocumentViewer } from "./components/DocumentViewer";
-import { QueryEditor } from "./components/QueryEditor";
+import { CustomQueryEditor } from "./components/CustomQueryEditor";
 import "./App.css";
 
 interface CollectionStats {
@@ -31,6 +31,10 @@ function App() {
   const [documents, setDocuments] = useState<any[]>([]);
   const [query, setQuery] = useState("{}");
   const [collectionSearchTerm, setCollectionSearchTerm] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [totalCount, setTotalCount] = useState(0);
+  const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
     const stored = localStorage.getItem("womo-db-favorites");
@@ -206,8 +210,13 @@ function App() {
       setError("");
       setSelectedCollection(collectionName);
       setQuery("{}");
-      const docs = await mongoService.getDocuments(selectedDb, collectionName, 100);
+      setCurrentPage(1);
+      const docs = await mongoService.getDocuments(selectedDb, collectionName, pageSize);
       setDocuments(docs);
+
+      // Get total count
+      const stats = collectionStats.get(collectionName);
+      setTotalCount(stats?.count || 0);
     } catch (e) {
       setError(String(e));
     }
@@ -216,8 +225,26 @@ function App() {
   async function handleQuery() {
     try {
       setError("");
-      const docs = await mongoService.queryDocuments(selectedDb, selectedCollection, query, 100);
+      setCurrentPage(1);
+
+      // Normalize shell syntax to JSON
+      let normalizedQuery = query.trim();
+
+      // Convert ObjectId("...") to {"$oid": "..."}
+      normalizedQuery = normalizedQuery.replace(/ObjectId\("([^"]+)"\)/g, '{"$oid":"$1"}');
+
+      // Convert ISODate("...") to {"$date": "..."}
+      normalizedQuery = normalizedQuery.replace(/ISODate\("([^"]+)"\)/g, '{"$date":"$1"}');
+
+      // Quote unquoted field names (e.g., {_id:... -> {"_id":...)
+      normalizedQuery = normalizedQuery.replace(/\{(\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, '{$1"$2":');
+
+      const docs = await mongoService.queryDocuments(selectedDb, selectedCollection, normalizedQuery, pageSize, 0);
       setDocuments(docs);
+
+      // Get accurate count from collection stats
+      const stats = collectionStats.get(selectedCollection);
+      setTotalCount(stats?.count || docs.length);
     } catch (e) {
       setError(String(e));
     }
@@ -227,8 +254,13 @@ function App() {
     try {
       setError("");
       await mongoService.updateDocument(selectedDb, selectedCollection, docId, newContent);
-      // Refresh documents
-      const docs = await mongoService.queryDocuments(selectedDb, selectedCollection, query, 100);
+      // Refresh current page
+      const normalizedQuery = query.trim()
+        .replace(/ObjectId\("([^"]+)"\)/g, '{"$oid":"$1"}')
+        .replace(/ISODate\("([^"]+)"\)/g, '{"$date":"$1"}')
+        .replace(/\{(\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, '{$1"$2":');
+      const skip = (currentPage - 1) * pageSize;
+      const docs = await mongoService.queryDocuments(selectedDb, selectedCollection, normalizedQuery, pageSize, skip);
       setDocuments(docs);
     } catch (e) {
       setError(String(e));
@@ -240,13 +272,46 @@ function App() {
     try {
       setError("");
       await mongoService.deleteDocument(selectedDb, selectedCollection, docId);
-      // Refresh documents
-      const docs = await mongoService.queryDocuments(selectedDb, selectedCollection, query, 100);
+      // Refresh current page
+      const normalizedQuery = query.trim()
+        .replace(/ObjectId\("([^"]+)"\)/g, '{"$oid":"$1"}')
+        .replace(/ISODate\("([^"]+)"\)/g, '{"$date":"$1"}')
+        .replace(/\{(\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, '{$1"$2":');
+      const skip = (currentPage - 1) * pageSize;
+      const docs = await mongoService.queryDocuments(selectedDb, selectedCollection, normalizedQuery, pageSize, skip);
       setDocuments(docs);
     } catch (e) {
       setError(String(e));
     }
   }
+
+  function showToast(message: string) {
+    setToast(message);
+    setTimeout(() => setToast(null), 2000);
+  }
+
+  // Re-fetch documents when page or pageSize changes (but not query)
+  useEffect(() => {
+    if (!selectedCollection) return;
+
+    const fetchPage = async () => {
+      try {
+        setError("");
+        let normalizedQuery = query.trim();
+        normalizedQuery = normalizedQuery.replace(/ObjectId\("([^"]+)"\)/g, '{"$oid":"$1"}');
+        normalizedQuery = normalizedQuery.replace(/ISODate\("([^"]+)"\)/g, '{"$date":"$1"}');
+        normalizedQuery = normalizedQuery.replace(/\{(\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, '{$1"$2":');
+
+        const skip = (currentPage - 1) * pageSize;
+        const docs = await mongoService.queryDocuments(selectedDb, selectedCollection, normalizedQuery, pageSize, skip);
+        setDocuments(docs);
+      } catch (e) {
+        setError(String(e));
+      }
+    };
+
+    fetchPage();
+  }, [currentPage, pageSize]);
 
   function formatBytes(bytes: number): string {
     if (bytes === 0) return "0 B";
@@ -263,8 +328,6 @@ function App() {
       if (!obj || typeof obj !== "object") return;
 
       for (const key in obj) {
-        if (key === "_id") continue;
-
         const fullPath = prefix ? `${prefix}.${key}` : key;
         fieldSet.add(fullPath);
 
@@ -342,14 +405,31 @@ function App() {
             {selectedDb ? (
               <>
                 <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-lg font-semibold">Collections in {selectedDb}</h3>
-                  <input
-                    type="text"
-                    value={collectionSearchTerm}
-                    onChange={(e) => setCollectionSearchTerm(e.target.value)}
-                    placeholder="Search collections..."
-                    className="w-64 px-3 py-2 rounded border border-gray-700 bg-gray-800 text-gray-100 outline-none text-sm placeholder:text-gray-500"
-                  />
+                  <div className="flex items-center gap-3">
+                    {selectedCollection && (
+                      <button
+                        onClick={() => {
+                          setSelectedCollection("");
+                          setQuery("{}");
+                        }}
+                        className="px-3 py-1.5 rounded bg-gray-800 border border-gray-700 text-sm hover:border-blue-500"
+                      >
+                        ← Back to collections
+                      </button>
+                    )}
+                    <h3 className="text-lg font-semibold">
+                      {selectedCollection ? `Query ${selectedCollection}` : `Collections in ${selectedDb}`}
+                    </h3>
+                  </div>
+                  {!selectedCollection && (
+                    <input
+                      type="text"
+                      value={collectionSearchTerm}
+                      onChange={(e) => setCollectionSearchTerm(e.target.value)}
+                      placeholder="Search collections..."
+                      className="w-64 px-3 py-2 rounded border border-gray-700 bg-gray-800 text-gray-100 outline-none text-sm placeholder:text-gray-500"
+                    />
+                  )}
                 </div>
                 {!selectedCollection ? (
                   <div className="overflow-x-auto">
@@ -405,24 +485,48 @@ function App() {
                   </div>
                 ) : (
                   <div>
-                    <button
-                      onClick={() => {
-                        setSelectedCollection("");
-                        setQuery("{}");
-                      }}
-                      className="mb-4 px-3 py-1.5 rounded bg-gray-800 border border-gray-700 text-sm hover:border-blue-500"
-                    >
-                      ← Back to collections
-                    </button>
-
                     <div className="mb-4">
                       <h4 className="text-md font-semibold mb-3">Query {selectedCollection}</h4>
-                      <QueryEditor
+                      <CustomQueryEditor
                         value={query}
                         onChange={setQuery}
                         onExecute={handleQuery}
                         fieldNames={documents.length > 0 ? extractFieldNames(documents) : []}
                       />
+                      <div className="flex items-center justify-end gap-3 mt-3">
+                        <select
+                          value={pageSize}
+                          onChange={(e) => {
+                            setPageSize(Number(e.target.value));
+                            setCurrentPage(1);
+                          }}
+                          className="px-3 py-1.5 rounded border border-gray-700 bg-gray-800 text-gray-100 outline-none text-sm"
+                        >
+                          <option value={10}>10</option>
+                          <option value={20}>20</option>
+                          <option value={50}>50</option>
+                          <option value={100}>100</option>
+                        </select>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                            disabled={currentPage === 1}
+                            className="px-3 py-1.5 rounded border border-gray-700 bg-gray-800 text-sm hover:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            ←
+                          </button>
+                          <span className="text-sm text-gray-400">
+                            Page {currentPage} of {Math.ceil(totalCount / pageSize) || 1}
+                          </span>
+                          <button
+                            onClick={() => setCurrentPage(Math.min(Math.ceil(totalCount / pageSize), currentPage + 1))}
+                            disabled={currentPage >= Math.ceil(totalCount / pageSize)}
+                            className="px-3 py-1.5 rounded border border-gray-700 bg-gray-800 text-sm hover:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            →
+                          </button>
+                        </div>
+                      </div>
                     </div>
 
                     {error && <p className="text-red-400 mb-3 text-sm">{error}</p>}
@@ -431,12 +535,19 @@ function App() {
                       documents={documents}
                       onUpdate={handleSaveDocument}
                       onDelete={handleDeleteDocument}
+                      onCopy={showToast}
                     />
                   </div>
                 )}
               </>
             ) : null}
           </div>
+        </div>
+      )}
+
+      {toast && (
+        <div className="fixed bottom-4 right-4 px-4 py-2 bg-gray-800 border border-gray-700 rounded shadow-lg text-sm text-gray-100 animate-fade-in">
+          {toast}
         </div>
       )}
     </main>

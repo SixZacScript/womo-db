@@ -24,7 +24,7 @@ export function QueryEditor({ value, onChange, onExecute, fieldNames = [] }: Que
 
     // Add quotes to unquoted string values (but not numbers/booleans)
     // Match: key: value (where value is not already quoted, not a number, not true/false/null, not ObjectId result, not {)
-    normalized = normalized.replace(/:\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*([,}])/g, (match, value, trailing) => {
+    normalized = normalized.replace(/:\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*([,}])/g, (_match, value, trailing) => {
       if (value === 'true' || value === 'false' || value === 'null') {
         return `: ${value}${trailing}`;
       }
@@ -48,14 +48,8 @@ export function QueryEditor({ value, onChange, onExecute, fieldNames = [] }: Que
 
     // Register autocomplete provider
     monaco.languages.registerCompletionItemProvider("json", {
-      provideCompletionItems: (model: any, position: any) => {
+      provideCompletionItems: (_model: any, _position: any) => {
         const suggestions = [];
-        const textBeforeCursor = model.getValueInRange({
-          startLineNumber: 1,
-          startColumn: 1,
-          endLineNumber: position.lineNumber,
-          endColumn: position.column,
-        });
 
         // Add field name suggestions
         for (const field of fieldNames) {

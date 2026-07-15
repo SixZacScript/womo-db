@@ -94,7 +94,7 @@ impl MongoDBClient {
         Ok(documents)
     }
 
-    pub async fn query_documents(&self, db_name: &str, collection_name: &str, query_str: &str, limit: i64) -> Result<Vec<mongodb::bson::Document>, mongodb::error::Error> {
+    pub async fn query_documents(&self, db_name: &str, collection_name: &str, query_str: &str, limit: i64, skip: u64) -> Result<Vec<mongodb::bson::Document>, mongodb::error::Error> {
         use mongodb::bson::Document;
         use futures::stream::StreamExt;
 
@@ -105,7 +105,7 @@ impl MongoDBClient {
             mongodb::error::Error::custom(format!("Invalid query JSON: {}", e))
         })?;
 
-        let mut cursor = collection.find(query).limit(limit).await?;
+        let mut cursor = collection.find(query).limit(limit).skip(skip).await?;
         let mut documents = Vec::new();
 
         while let Some(doc) = cursor.next().await {
