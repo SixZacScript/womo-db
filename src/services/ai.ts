@@ -9,11 +9,12 @@ export interface QueryGenerationResponse {
   explanation: string;
 }
 
-// Chrome Built-in AI (Gemini Nano)
-// Requires Chrome 127+ with AI features enabled
+// LM Studio Local API
+const LM_STUDIO_URL = "http://localhost:1234/v1/chat/completions";
+
 export async function generateMongoQuery(
   request: QueryGenerationRequest,
-  _apiKey: string
+  apiKey: string
 ): Promise<QueryGenerationResponse> {
   const systemPrompt = `You are a MongoDB query expert. Generate valid MongoDB query JSON based on user requests.
 
@@ -31,34 +32,31 @@ User request: ${request.prompt}
 Return only the MongoDB query JSON:`;
 
   try {
-    // Check if Chrome AI is available
-    if (!('ai' in window) || !('languageModel' in (window as any).ai)) {
-      throw new Error("Chrome Built-in AI not available. Please use Chrome 127+ and enable AI features at chrome://flags/#optimization-guide-on-device-model");
-    }
-
-    const ai = (window as any).ai;
-
-    // Check availability
-    const availability = await ai.languageModel.capabilities();
-    if (availability.available === "no") {
-      throw new Error("Chrome AI model not available. Please enable it in Chrome settings.");
-    }
-
-    // Create session
-    const session = await ai.languageModel.create({
-      systemPrompt,
-      temperature: 0.3,
-      topK: 3,
+    const response = await fetch(LM_STUDIO_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: request.prompt },
+        ],
+        temperature: 0.3,
+        max_tokens: 500,
+      }),
     });
 
-    // Generate response
-    const result = await session.prompt(request.prompt);
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`LM Studio API error: ${error}`);
+    }
 
-    // Cleanup
-    session.destroy();
+    const data = await response.json();
+    const generatedText = data.choices?.[0]?.message?.content || "{}";
 
     // Extract JSON from response (remove markdown if present)
-    let query = result.trim();
+    let query = generatedText.trim();
 
     // Remove markdown code blocks
     if (query.includes("```")) {
