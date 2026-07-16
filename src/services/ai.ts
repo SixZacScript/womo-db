@@ -13,8 +13,7 @@ export interface QueryGenerationResponse {
 const LM_STUDIO_URL = "http://localhost:1234/v1/chat/completions";
 
 export async function generateMongoQuery(
-  request: QueryGenerationRequest,
-  apiKey: string
+  request: QueryGenerationRequest
 ): Promise<QueryGenerationResponse> {
   const systemPrompt = `You are a MongoDB query expert. Generate valid MongoDB query JSON based on user requests.
 

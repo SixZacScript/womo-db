@@ -24,14 +24,11 @@ export function AIQueryButton({ collectionName, sampleFields, onQueryGenerated }
     setError("");
 
     try {
-      const result = await generateMongoQuery(
-        {
-          prompt: prompt.trim(),
-          collectionName,
-          sampleFields,
-        },
-        "" // No API key needed for LM Studio
-      );
+      const result = await generateMongoQuery({
+        prompt: prompt.trim(),
+        collectionName,
+        sampleFields,
+      });
 
       onQueryGenerated(result.query);
       setIsOpen(false);
